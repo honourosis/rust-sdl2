@@ -20,10 +20,10 @@ fn draw_pixels(canvas: &mut WindowCanvas, pixels: &[u32], height: usize, width: 
     for y in 0..height {
         for x in 0..width {
             let pixel = pixels[y * width + x];
-            let color = [((pixel >> 8 * 2) & 0xFF) as u8,
+            let color = (((pixel >> 8 * 2) & 0xFF) as u8,
                 ((pixel >> 8 * 1) & 0xFF) as u8,
-                ((pixel >> 8 * 0) & 0xFF) as u8];
-            let color = Color::from((color[0], color[1], color[2]));
+                ((pixel >> 8 * 0) & 0xFF) as u8);
+            let color = Color::from(color);
             canvas.set_draw_color(color);
             let point = Point::new(x as i32, y as i32);
             canvas.draw_point(point);
