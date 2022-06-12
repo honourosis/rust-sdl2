@@ -1,32 +1,52 @@
+use rand::Rng;
+use rand::rngs::ThreadRng;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
-use sdl2::rect::Point;
+use sdl2::rect::{Point, Rect};
 use sdl2::render::WindowCanvas;
 
-fn fill_chess(pixels: &mut [u32], scale: &usize, height: usize, width: usize) {
+fn fill_with_check_pattern(pixels: &mut [u32], scale: &usize, height: usize, width: usize, rng: &mut ThreadRng) {
     for y in 0..height {
         for x in 0..width {
-            pixels[y * width + x] = if ((y + x ^ 3) / scale) % 2 == 0 {
-                696969
+            pixels[y * width + x] = if (x / scale + y / scale) % 2 == 0 {
+                get_random_color(rng)
             } else {
-                000000
+                compose_color(20, 20, 20)
             }
         }
     }
 }
 
-fn draw_pixels(canvas: &mut WindowCanvas, pixels: &[u32], height: usize, width: usize) {
+fn split_rgb(color: u32) -> (u8, u8, u8) {
+    (((color >> 8 * 2) & 0xFF) as u8,
+     ((color >> 8 * 1) & 0xFF) as u8,
+     ((color >> 8 * 0) & 0xFF) as u8)
+}
+
+fn compose_color(r: u32, g: u32, b: u32) -> u32 {
+    let mut rgb = r;
+    rgb = (rgb << 8) + g;
+    rgb = (rgb << 8) + b;
+    rgb as u32
+}
+
+fn get_random_color(rng: &mut ThreadRng) -> u32 {
+    let r = rng.gen_range(0..255);
+    let g = rng.gen_range(0..255);
+    let b = rng.gen_range(0..255);
+    compose_color(r, g, b)
+}
+
+fn draw_pixels(canvas: &mut WindowCanvas, pixels: &[u32], height: usize, width: usize, scale: usize) {
     for y in 0..height {
         for x in 0..width {
             let pixel = pixels[y * width + x];
-            let color = (((pixel >> 8 * 2) & 0xFF) as u8,
-                ((pixel >> 8 * 1) & 0xFF) as u8,
-                ((pixel >> 8 * 0) & 0xFF) as u8);
+            let color = split_rgb(pixel);
             let color = Color::from(color);
             canvas.set_draw_color(color);
-            let point = Point::new(x as i32, y as i32);
-            canvas.draw_point(point);
+            let rect = Rect::new((x * scale) as i32, (y * scale) as i32, scale as u32, scale as u32);
+            canvas.draw_rect(rect);
         }
     }
 }
@@ -37,7 +57,7 @@ fn main() {
 
     const WINDOW_HEIGHT: usize = 600;
     const WINDOW_WIDTH: usize = 800;
-    const PATTERN_SIZE: u32 = 5;
+    const WINDOW_SCALE: usize = 4;
 
     let sdl_context = sdl2::init()
         .expect("Unable to init SDL");
@@ -54,40 +74,63 @@ fn main() {
         .expect("Unable to extract SDL event listener");
 
     let mut canvas = window.into_canvas()
+        .present_vsync()
+        .accelerated()
         .build()
         .expect("Unable to create canvas");
 
-    let mut field = [0u32; WINDOW_HEIGHT * WINDOW_WIDTH];
-    let mut scale = 1;
-    let mut limit = 5;
+    let mut field = [0u32; WINDOW_HEIGHT * WINDOW_WIDTH / WINDOW_SCALE];
+    let mut rng = rand::thread_rng();
+
+    let mut upper_limit = 25;
+    let mut lower_limit = 10;
+    let mut scale = lower_limit;
     let mut increment = true;
     while running {
-        if scale >= limit || scale <= limit {
-            increment = !increment;
+        println!("Scale: {}; Upper limit: {} | Lower limit: {}", scale, upper_limit, lower_limit);
+        if scale >= upper_limit && increment {
+            increment = false;
+        } else if scale <= lower_limit && !increment {
+            increment = true;
         }
         scale = if increment {
             scale + 1
         } else {
-            scale + 1
+            scale - 1
         };
         for event in events.poll_iter() {
             match event {
                 Event::Quit { .. } => { running = false }
                 Event::KeyDown { keycode: Some(Keycode::W), .. } => {
-                    limit = limit + 1;
+                    upper_limit = upper_limit + 1;
                 }
                 Event::KeyDown { keycode: Some(Keycode::S), .. } => {
-                    limit = limit - 1;
+                    if !(upper_limit - 1 <= lower_limit) {
+                        upper_limit = upper_limit - 1;
+                    }
+                }
+                Event::KeyDown { keycode: Some(Keycode::A), .. } => {
+                    if !(lower_limit + 1 >= upper_limit) {
+                        lower_limit = lower_limit + 1;
+                    }
+                }
+                Event::KeyDown { keycode: Some(Keycode::D), .. } => {
+                    if !(lower_limit <= 1) {
+                        lower_limit = lower_limit - 1;
+                    }
                 }
                 _ => {}
             }
         }
+
+        fill_with_check_pattern(&mut field, &scale, WINDOW_HEIGHT / WINDOW_SCALE, WINDOW_WIDTH / WINDOW_SCALE, &mut rng);
+
         canvas.set_draw_color(BACKGROUND_COLOR);
         canvas.clear();
 
-        fill_chess(&mut field, &scale, WINDOW_HEIGHT, WINDOW_WIDTH);
-        draw_pixels(&mut canvas, &field, WINDOW_HEIGHT, WINDOW_WIDTH);
+        draw_pixels(&mut canvas, &field, WINDOW_HEIGHT / WINDOW_SCALE, WINDOW_WIDTH / WINDOW_SCALE, WINDOW_SCALE);
 
         canvas.present();
+        std::thread::sleep(std::time::Duration::from_millis(1000 / 60));
     }
 }
